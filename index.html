@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="kk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0d3b2c" />
+    <title>Taza Route — Алматы қайта өңдеу картасы</title>
+    <meta
+      name="description"
+      content="Taza Route: интерактивті карта — Алматыдағы қайта өңдеу пункттері."
+    />
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Tailwind CSS (CDN — hackathon / MVP) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              eco: {
+                forest: '#0d3b2c',
+                mint: '#3dd598',
+                leaf: '#22c55e',
+                sky: '#7dd3fc',
+              },
+            },
+            boxShadow: {
+              glass: '0 8px 32px rgba(13, 59, 44, 0.12)',
+            },
+          },
+        },
+      };
+    </script>
+
+    <!-- Leaflet -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="antialiased">
+    <!-- Map fills viewport -->
+    <div id="map" class="fixed inset-0" aria-hidden="false"></div>
+
+    <!-- Eco-Status (always visible) -->
+    <div class="fixed top-3 left-3 right-3 sm:left-4 sm:right-auto z-[3000] flex justify-center sm:justify-start pointer-events-none">
+      <div
+        id="eco-status"
+        class="glass-panel-strong pointer-events-auto rounded-2xl px-4 py-2.5 flex items-center gap-3 shadow-glass max-w-[calc(100vw-1.5rem)]"
+        role="status"
+        aria-live="polite"
+      >
+        <span
+          class="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-900/20"
+          aria-hidden="true"
+        >
+          <i class="fa-solid fa-leaf text-lg"></i>
+        </span>
+        <div class="min-w-0">
+          <p class="text-[10px] uppercase tracking-widest text-white/80 font-bold" data-i18n="ecoScoreLabel">
+            Эко-ұпай
+          </p>
+          <p class="text-2xl font-extrabold text-white tabular-nums leading-tight drop-shadow">
+            <span id="eco-points">0</span>
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top bar: brand + language -->
+    <header
+      class="fixed top-3 left-3 right-3 sm:left-auto sm:w-auto z-[1000] sm:top-4 sm:right-4 flex flex-col sm:flex-row gap-2 sm:items-center sm:gap-3 pointer-events-none items-stretch sm:items-center"
+    >
+      <div
+        class="glass-panel-strong rounded-2xl px-4 py-3 shadow-glass pointer-events-auto flex items-center justify-between gap-4 order-2 sm:order-1"
+      >
+        <div class="min-w-0">
+          <h1 class="text-lg font-bold text-eco-forest tracking-tight truncate" data-i18n="brandTitle">
+            Taza Route
+          </h1>
+          <p class="text-xs text-slate-600 truncate" data-i18n="brandSubtitle">Жасыл Алматы картасы</p>
+        </div>
+      </div>
+
+      <!-- Language toggle -->
+      <div
+        class="glass-panel rounded-2xl p-1 flex shadow-glass pointer-events-auto order-1 sm:order-2 self-center sm:self-auto"
+        role="group"
+        aria-label="Тіл ауыстыру"
+      >
+        <button
+          type="button"
+          id="lang-kk"
+          class="lang-btn touch48 px-4 py-2 rounded-xl text-sm font-semibold transition-colors bg-white/80 text-eco-forest shadow-sm"
+        >
+          ҚР
+        </button>
+        <button
+          type="button"
+          id="lang-ru"
+          class="lang-btn touch48 px-4 py-2 rounded-xl text-sm font-semibold text-slate-600 hover:text-eco-forest transition-colors"
+        >
+          РУ
+        </button>
+      </div>
+    </header>
+
+    <!-- Mobile FAB stack (one-handed, bottom-right) -->
+    <div class="fixed right-4 bottom-4 z-[2600] sm:hidden flex flex-col gap-3 pointer-events-none">
+      <button
+        type="button"
+        id="fab-locate"
+        class="fab-btn pointer-events-auto"
+        aria-label="Find my location"
+      >
+        <i class="fa-solid fa-location-arrow"></i>
+      </button>
+      <button
+        type="button"
+        id="fab-calc"
+        class="fab-btn pointer-events-auto"
+        aria-controls="calc-panel"
+        aria-expanded="false"
+      >
+        <i class="fa-solid fa-calculator"></i>
+      </button>
+      <button
+        type="button"
+        id="fab-filter"
+        class="fab-btn pointer-events-auto"
+        aria-controls="filter-panel"
+        aria-expanded="false"
+      >
+        <i class="fa-solid fa-filter"></i>
+      </button>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="fixed top-3 left-3 right-3 z-[4000] hidden pointer-events-none">
+      <div class="glass-panel-strong rounded-2xl px-4 py-3 text-sm font-semibold text-white shadow-glass">
+        <span id="toast-text"></span>
+      </div>
+    </div>
+
+    <!-- Filter sidebar (floating drawer) -->
+    <aside
+      id="filter-panel"
+      class="fixed bottom-0 left-0 right-0 sm:bottom-auto sm:left-auto sm:top-1/2 sm:-translate-y-1/2 sm:right-4 z-[1000] max-h-[42vh] sm:max-h-[min(85vh,560px)] w-full sm:w-72 pointer-events-none safe-pb sm:pb-0"
+    >
+      <div
+        class="glass-panel-strong rounded-t-3xl sm:rounded-3xl shadow-glass pointer-events-auto flex flex-col mx-2 sm:mx-0 mb-2 sm:mb-0 overflow-hidden border border-white/40"
+      >
+        <div class="px-4 pt-4 pb-2 border-b border-white/30">
+          <div class="flex items-center gap-2 text-eco-forest">
+            <i class="fa-solid fa-filter text-emerald-600"></i>
+            <h2 class="font-bold text-sm uppercase tracking-wide" data-i18n="filterTitle">Сүзгілер</h2>
+          </div>
+          <p class="text-xs text-slate-600 mt-1" data-i18n="filterHint">Көрсетілетін пункт түрлерін таңдаңыз</p>
+        </div>
+        <div class="custom-scroll overflow-y-auto px-3 py-3 space-y-2 flex-1" id="filter-chips">
+          <!-- Injected by script -->
+        </div>
+        <div class="px-3 pb-3 pt-1 border-t border-white/25">
+          <button
+            type="button"
+            id="reset-filters"
+            class="w-full touch48 py-2.5 rounded-xl text-sm font-semibold text-eco-forest bg-white/50 hover:bg-white/80 border border-white/40 transition-colors"
+          >
+            <span data-i18n="resetFilters">Барлық түрді көрсету</span>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Eco calculator widget (desktop visible, mobile collapses into trigger) -->
+    <div
+      id="calc-panel"
+      class="fixed left-3 right-3 bottom-4 sm:bottom-6 sm:left-4 sm:right-auto sm:w-80 z-[999] pointer-events-none max-w-md mx-auto sm:mx-0"
+    >
+      <div class="glass-panel-strong rounded-2xl p-4 shadow-glass pointer-events-auto border border-white/40">
+        <div class="flex items-center gap-2 text-eco-forest mb-2">
+          <i class="fa-solid fa-calculator text-teal-600"></i>
+          <h3 class="font-bold text-sm" data-i18n="calcTitle">CO₂ есептегіш</h3>
+        </div>
+        <label for="waste-weight" class="text-xs text-slate-600 block mb-1" data-i18n="calcWeightLabel"
+          >Салмақ (кг)</label
+        >
+        <div class="flex gap-2">
+          <input
+            id="waste-weight"
+            type="number"
+            min="0"
+            step="0.1"
+            placeholder="0"
+            class="flex-1 rounded-xl border border-white/50 bg-white/60 px-3 py-2 text-sm text-eco-forest placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-eco-mint/60"
+          />
+        </div>
+        <label for="waste-material" class="text-xs text-slate-600 block mt-2 mb-1" data-i18n="calcMaterialLabel"
+          >Материал</label
+        >
+        <select
+          id="waste-material"
+          class="w-full rounded-xl border border-white/50 bg-white/60 px-3 py-2 text-sm text-eco-forest focus:outline-none focus:ring-2 focus:ring-eco-mint/60"
+        >
+          <!-- Options filled by i18n -->
+        </select>
+        <div
+          class="mt-3 rounded-xl bg-gradient-to-r from-emerald-500/15 to-teal-500/15 border border-emerald-400/30 px-3 py-2"
+        >
+          <p class="text-[10px] uppercase text-slate-500 font-semibold" data-i18n="calcResultLabel">
+            Шамамен үнемделген CO₂
+          </p>
+          <p class="text-lg font-bold text-eco-forest tabular-nums" id="co2-result">0 kg</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide-over detail panel -->
+    <div id="detail-backdrop" class="fixed inset-0 z-[2000] slide-over-backdrop hidden opacity-0 transition-opacity" aria-hidden="true"></div>
+    <aside
+      id="detail-panel"
+      class="slide-over-panel fixed top-0 right-0 z-[2001] h-full w-full max-w-md glass-panel-strong border-l border-white/40 shadow-2xl flex flex-col pointer-events-none invisible"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="detail-name"
+    >
+      <div class="flex items-start justify-between gap-3 p-5 border-b border-white/30">
+        <div class="min-w-0">
+          <p class="text-[10px] uppercase tracking-widest text-emerald-700 font-semibold mb-1" data-i18n="detailSubtitle">
+            Пункт мәліметі
+          </p>
+          <h2 id="detail-name" class="text-xl font-bold text-eco-forest leading-snug"></h2>
+        </div>
+        <button
+          type="button"
+          id="detail-close"
+          class="shrink-0 h-12 w-12 rounded-xl bg-white/50 hover:bg-white/80 border border-white/40 flex items-center justify-center text-slate-600 transition-colors touch48"
+          aria-label="Close"
+        >
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+      <div class="custom-scroll flex-1 overflow-y-auto p-5 space-y-4">
+        <div class="flex items-start gap-3 rounded-2xl bg-white/40 p-3 border border-white/30">
+          <i class="fa-solid fa-location-dot text-rose-500 mt-0.5"></i>
+          <div>
+            <p class="text-xs font-semibold text-slate-500" data-i18n="addressLabel">Мекен-жай</p>
+            <p id="detail-address" class="text-sm text-eco-forest"></p>
+          </div>
+        </div>
+        <div class="flex items-start gap-3 rounded-2xl bg-white/40 p-3 border border-white/30">
+          <i class="fa-regular fa-clock text-blue-500 mt-0.5"></i>
+          <div>
+            <p class="text-xs font-semibold text-slate-500" data-i18n="hoursLabel">Жұмыс уақыты</p>
+            <p id="detail-hours" class="text-sm text-eco-forest"></p>
+          </div>
+        </div>
+        <div>
+          <p class="text-xs font-semibold text-slate-500 mb-2" data-i18n="materialsLabel">Қабылдайды</p>
+          <ul id="detail-materials" class="space-y-2"></ul>
+        </div>
+      </div>
+      <div class="p-5 border-t border-white/30 safe-pb bg-white/20">
+        <a
+          id="btn-open-maps"
+          href="#"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="block w-full touch48 mb-3 py-3.5 rounded-2xl font-bold text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 shadow-lg shadow-blue-900/20 transition-all active:scale-[0.99] text-center"
+        >
+          <i class="fa-solid fa-up-right-from-square mr-2" aria-hidden="true"></i>
+          <span id="btn-open-maps-label" data-i18n="openMaps">2GIS / Google Maps</span>
+        </a>
+        <button
+          type="button"
+          id="btn-recycled"
+          class="w-full touch48 py-3.5 rounded-2xl font-bold text-white bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 shadow-lg shadow-teal-900/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2 relative overflow-hidden"
+        >
+          <i class="fa-solid fa-sparkles"></i>
+          <span data-i18n="btnRecycled">Мен осында қайта өңдедім</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Font Awesome -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/js/all.min.js" crossorigin="anonymous"></script>
+    <!-- canvas-confetti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+    <!-- Leaflet JS -->
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+
+    <script src="data.js"></script>
+    <script src="script.js"></script>
+
+    <!-- Confetti target (full screen overlay) -->
+    <canvas id="confetti-canvas" aria-hidden="true"></canvas>
+  </body>
+</html>
